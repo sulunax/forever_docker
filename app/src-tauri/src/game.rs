@@ -10,6 +10,9 @@ use std::process::{Child, Command};
 pub const WTF_NAME: &str = "ForeverLauncher.wtf";
 #[cfg(not(target_os = "macos"))]
 const LAUNCH_OPTIONS: &str = r"Software\Blizzard Entertainment\Battle.net\Launch Options\WoW";
+// The WoW `portal` CVar selects the Blizzard patch-service region. The private
+// server host is passed separately through CONNECTION_STRING and the hosts file.
+const GAME_REGION: &str = "EU";
 
 /// WTF/ForeverLauncher.wtf: a copy of Config.wtf with the portal and the language set.
 pub fn write_wtf(settings: &Settings) -> Result<(), String> {
@@ -19,7 +22,7 @@ pub fn write_wtf(settings: &Settings) -> Result<(), String> {
     let base = dir.join("Config.wtf");
     let text = std::fs::read_to_string(&path).or_else(|_| std::fs::read_to_string(&base)).unwrap_or_default();
     let wanted = [
-        ("portal", settings.server.portal.clone()),
+        ("portal", GAME_REGION.to_string()),
         ("textLocale", settings.locale.clone()),
         ("audioLocale", settings.locale.clone()),
     ];
