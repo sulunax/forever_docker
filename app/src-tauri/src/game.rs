@@ -1,4 +1,4 @@
-//! Game preparation and start: WTF config, Launch Options\WoW (auto-login), WowB.exe -launcherlogin.
+//! Game preparation and start: WTF config, Launch Options\\WoW (auto-login), WowB.exe -launcherlogin.
 //! macOS starts a copy of the game app instead: see macos.rs.
 
 use crate::config::Settings;
@@ -9,10 +9,41 @@ use std::process::{Child, Command};
 
 pub const WTF_NAME: &str = "ForeverLauncher.wtf";
 #[cfg(not(target_os = "macos"))]
-const LAUNCH_OPTIONS: &str = r"Software\Blizzard Entertainment\Battle.net\Launch Options\WoW";
-// The WoW `portal` CVar selects the Blizzard patch-service region. The private
-// server host is passed separately through CONNECTION_STRING and the hosts file.
-const GAME_REGION: &str = "EU";
+const LAUNCH_OPTIONS: &str = r"Software\\Blizzard Entertainment\\Battle.net\\Launch Options\\WoW";
+// The WoW `portal` CVar selects the Blizzard patch-service region. Read it from
+// the active client install entry; the private server host is configured
+// separately through CONNECTION_STRING and the hosts file.
+const DEFAULT_GAME_REGION: &str = "EU";
+
+fn game_region(settings: &Settings) -> String {
+    let info_path = Path::new(&settings.game_dir).parent().map(|dir| dir.join(".build.info"));
+    let Some(info) = info_path.and_then(|path| std::fs::read_to_string(path).ok()) else {
+        return DEFAULT_GAME_REGION.to_string();
+    };
+
+    let mut lines = info.lines();
+    let Some(header) = lines.next() else {
+        return DEFAULT_GAME_REGION.to_string();
+    };
+    let columns: Vec<&str> = header.split('|').map(|column| column.split('!').next().unwrap_or("")).collect();
+    let Some(branch) = columns.iter().position(|column| *column == "Branch") else {
+        return DEFAULT_GAME_REGION.to_string();
+    };
+    let Some(active) = columns.iter().position(|column| *column == "Active") else {
+        return DEFAULT_GAME_REGION.to_string();
+    };
+    let Some(product) = columns.iter().position(|column| *column == "Product") else {
+        return DEFAULT_GAME_REGION.to_string();
+    };
+
+    lines
+        .map(|line| line.split('|').collect::<Vec<_>>())
+        .find(|row| row.get(active) == Some(&"1") && row.get(product) == Some(&"wow_classic_beta"))
+        .and_then(|row| row.get(branch).copied())
+        .filter(|region| matches!(*region, "us" | "eu" | "kr" | "tw" | "cn"))
+        .map(str::to_ascii_uppercase)
+        .unwrap_or_else(|| DEFAULT_GAME_REGION.to_string())
+}
 
 /// WTF/ForeverLauncher.wtf: a copy of Config.wtf with the portal and the language set.
 pub fn write_wtf(settings: &Settings) -> Result<(), String> {
@@ -22,7 +53,7 @@ pub fn write_wtf(settings: &Settings) -> Result<(), String> {
     let base = dir.join("Config.wtf");
     let text = std::fs::read_to_string(&path).or_else(|_| std::fs::read_to_string(&base)).unwrap_or_default();
     let wanted = [
-        ("portal", GAME_REGION.to_string()),
+        ("portal", game_region(settings)),
         ("textLocale", settings.locale.clone()),
         ("audioLocale", settings.locale.clone()),
     ];
@@ -68,7 +99,7 @@ pub fn write_launch_options(settings: &Settings, portal: &str, ticket: &str, gam
     let blob = wine::protect(ticket.as_bytes(), wine::PROTON_USER, &WEB_TOKEN_ENTROPY);
     let hexdata: Vec<String> = blob.iter().map(|b| format!("{b:02x}")).collect();
     let content = format!(
-        "Windows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER\\{LAUNCH_OPTIONS}]\r\n\"WEB_TOKEN\"=hex:{}\r\n\"GAME_ACCOUNT\"=\"{game_account}\"\r\n\"CONNECTION_STRING\"=\"{portal}\"\r\n",
+        "Windows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER\\{LAUNCH_OPTIONS}]\r\n\\\"WEB_TOKEN\\\"=hex:{}\r\n\\\"GAME_ACCOUNT\\\"=\\\"{game_account}\\\"\r\n\\\"CONNECTION_STRING\\\"=\\\"{portal}\\\"\r\n",
         hexdata.join(",")
     );
     // regedit files are UTF-16 LE with a BOM; Wine sees the Linux file system as Z:
@@ -80,7 +111,7 @@ pub fn write_launch_options(settings: &Settings, portal: &str, ticket: &str, gam
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let file = dir.join("launch-options.reg");
     std::fs::write(&file, bytes).map_err(|e| e.to_string())?;
-    let wine_path = format!("Z:{}", file.to_string_lossy().replace('/', "\\"));
+    let wine_path = format!("Z:{}", file.to_string_lossy().replace('/', "\\\\"));
     let res = crate::system::run_in_prefix(settings, &["reg", "import", &wine_path]);
     let _ = std::fs::remove_file(&file);
     res
