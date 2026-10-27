@@ -120,7 +120,7 @@ pub fn write_launch_options(settings: &Settings, portal: &str, ticket: &str, gam
 #[cfg(windows)]
 pub fn spawn(settings: &Settings) -> Result<Child, String> {
     Command::new(settings.exe())
-        .args(["-launcherlogin", "-config", WTF_NAME])
+        .args(["-launcherlogin", "-uid", "wow_classic_beta", "-config", WTF_NAME])
         .current_dir(&settings.game_dir)
         .spawn()
         .map_err(|e| tf("launch_failed", &[&"WowB.exe", &e]))
@@ -131,7 +131,7 @@ pub fn spawn(settings: &Settings) -> Result<Child, String> {
     let (runner, mut env) = crate::system::runner(settings)?;
     let mut cmd: Vec<String> = runner;
     cmd.push(settings.exe().to_string_lossy().into_owned());
-    cmd.extend(["-launcherlogin", "-config", WTF_NAME].map(String::from));
+    cmd.extend(["-launcherlogin", "-uid", "wow_classic_beta", "-config", WTF_NAME].map(String::from));
     let l = &settings.linux;
     if l.gamescope && crate::system::which("gamescope") {
         // gamescope starts its own Xwayland with a US keyboard unless told otherwise
